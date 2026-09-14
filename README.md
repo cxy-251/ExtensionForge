@@ -36,12 +36,20 @@ ExtensionForge/
 | 序号 | 目录 | 名称 | 作用 |
 |---|---|---|---|
 | 001 | `001YouTubeWatchEnhancer` | YouTube 观看增强助手 | YouTube 播放器网页全屏、单视频循环、频道视频页一键合成播放列表 |
-| 002 | `002KuaishouCreatorArchiver` | 快手创作者作品归档助手 | 在真实会话里旁路读取快手作品接口，抓视频/图集直链并批量下载；支持导入创作者主页列表连续归档 |
+| 002 | `002KuaishouCreatorArchiver` | 快手创作者作品归档助手 | 旁路读取快手作品接口，抓视频/图集直链并批量下载；支持导入创作者主页列表连续归档（批量列表+控制台页） |
+| 003 | `003DouyinCreatorArchiver` | 抖音创作者作品归档助手 | 同 002 架构，抖音接口；v1 只做单页手动采集 |
+| 004 | `004TikTokCreatorArchiver` | TikTok 创作者作品归档助手 | 同 002/003 架构，TikTok 接口；v1 只做单页手动采集，内置了 002/003 踩过的图集/串标签坑 |
+
+002/003/004 三个"创作者作品归档助手"是同一套架构的三份实现（旁路抓包 + 面板采集 +
+下载队列），字段/接口按平台各自适配，遇到的坑（CDN 直链要带登录态 Cookie、图集混入
+兼容音轨、串页面标签采错数据……）后一个版本会把前一个版本踩过的坑直接内置修掉，
+具体细节各看各的 README。
 
 ---
 
 ## 相关
 
-- `../dyd/` —— 老工具 DyD（Electron 版多平台短视频下载器）的逆向分析与去混淆源码；
-  `002KuaishouCreatorArchiver` 的快手解析分支即移植自 `../dyd/src-deobfuscated/service/ks.annotated.js`，
-  设计取舍见 `../dyd/方案分析.md`。
+- `dyd/` —— 老工具 DyD（Electron 版多平台短视频下载器）的逆向分析与去混淆源码；
+  `002KuaishouCreatorArchiver` 的快手解析分支即移植自 `dyd/src-deobfuscated/service/ks.annotated.js`，
+  `003DouyinCreatorArchiver`/`004TikTokCreatorArchiver` 的 Cookie/Referer 下载头方案参考自
+  `dyd/src-deobfuscated/service/dy.js`/`tk.js`；设计取舍见 `dyd/方案分析.md`。
