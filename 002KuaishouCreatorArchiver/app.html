@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="app.css">
+  <title>快手归档助手 · 控制台</title>
+</head>
+<body>
+<div class="wrap">
+  <header class="hd">快手创作者作品归档助手 · 控制台</header>
+
+  <section class="card">
+    <h2>下载根目录（授权一次）</h2>
+    <p class="stat" id="fsStat">未授权</p>
+    <div class="row">
+      <button id="fsGrant">授权下载根目录</button>
+      <button class="ghost" id="fsSync">立即同步磁盘</button>
+    </div>
+    <p class="hint">指到你浏览器的<strong>默认下载目录</strong>即可（不新建、不移动任何东西）。
+      授权后：下载前读 <code>&lt;前缀&gt;/&lt;作者&gt;/downloaded.txt</code> 决定跳过谁，下载后直接写回。
+      不授权也能用，只是靠浏览器索引去重、不写 txt。</p>
+  </section>
+
+  <section class="card">
+    <h2>创作者列表</h2>
+    <p class="stat" id="listStat">尚未导入</p>
+    <div class="row">
+      <label class="filebtn">
+        导入 kuaiChannels.txt
+        <input type="file" id="importFile" accept=".txt,.csv,text/plain" hidden>
+      </label>
+      <button class="ghost" id="retryErrors">重试失败项</button>
+      <button class="ghost" id="clearList">清空列表</button>
+      <button class="ghost" id="reviewEmptyBtn" style="display:none;" onclick="reviewEmptyAccounts()">📋 查看0作品账号</button>
+    </div>
+    <p class="hint">每行一个 <code>https://www.kuaishou.com/profile/&lt;id&gt;</code>；重复导入自动去重合并、保留进度。
+      失败项连续模式会自动重试 1 次，仍失败就停在「失败」——点「重试失败项」清零重来。
+      「已完成但 0 作品」可能是账号真被清空了，也可能是采集本身没滚动成功漏采了——先点「查看0作品账号」核实，
+      确认没问题再手动清：<a href="#" onclick="removeEmptyAccounts();return false;">移除这些账号</a>。</p>
+  </section>
+
+  <section class="card">
+    <h2>连续采集</h2>
+    <div class="grid2">
+      <label>每位作者滚动上限
+        <input type="number" id="maxRounds" min="5" max="3000" value="600">
+      </label>
+      <label>作者之间等待(秒)
+        <span class="pair">
+          <input type="number" id="gapMin" min="3" max="600" value="20"> –
+          <input type="number" id="gapMax" min="3" max="600" value="45">
+        </span>
+      </label>
+    </div>
+    <label class="ck"><input type="checkbox" id="keepTabs"> 采集后保留标签页（不自动关）</label>
+    <div class="row">
+      <button id="openNext">打开下一个</button>
+      <button id="toggleLoop">开始连续模式</button>
+    </div>
+    <div class="progress"><div id="progressBar"></div></div>
+    <p class="stat big" id="loopStat">待机</p>
+    <p class="hint">本页保持打开即可持续跑（这就是那个常驻标签页）。撞验证码 / 一直没响应都会停下来，「打开下一个」按钮会变成「继续」——点它对同一个标签页重试，不会绕过去开一个新的。</p>
+  </section>
+
+  <section class="card">
+    <h2>下载队列</h2>
+    <div class="grid2">
+      <label>并发数 <input type="number" id="concurrency" min="1" max="8" value="2"></label>
+      <label>保存目录前缀 <input type="text" id="saveRoot" value="快手"></label>
+    </div>
+    <p class="stat" id="dlStat">完成 0 · 失败 0 · 排队 0</p>
+    <div class="row">
+      <button class="ghost" id="toggleQueue">暂停队列</button>
+      <button class="ghost" id="clearQueue">清空队列</button>
+    </div>
+    <p class="stat" id="dedupStat">已下记录 0 条</p>
+    <div class="row">
+      <label class="filebtn">
+        导入 downloaded.txt
+        <input type="file" id="importArchive" accept=".txt,text/plain" multiple hidden>
+      </label>
+      <button class="ghost" id="resetDedup">重置记录</button>
+    </div>
+    <p class="hint">「保存目录前缀」= 授权目录下的子文件夹（默认 <code>快手</code>）。视频落在
+      <code>&lt;下载目录&gt;/&lt;前缀&gt;/&lt;作者&gt;/</code>，要换根位置改 Chrome 下载设置。</p>
+  </section>
+</div>
+  <script src="app.js"></script>
+</body>
+</html>

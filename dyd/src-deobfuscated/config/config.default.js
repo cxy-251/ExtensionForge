@@ -1,0 +1,57 @@
+'use strict';
+const path=require("path");
+module.exports=_0x5cdcf2=>{
+  const _0x1f4812=_0x3ca9a5,_0x119d12={
+  };
+  return _0x119d12.openDevTools=![],_0x119d12.openAppMenu=![],_0x119d12.windowsOption={
+    'title':"DyD",'width':1200,'height':800,'minWidth':80,'minHeight':80,'resizable':!![],'frame':![],'show':![],'icon':path.join(_0x5cdcf2.home,"public","images","logo-32.png"),'webPreferences':{
+      'scrollBounce':![],'webSecurity':![],'contextIsolation':![],'nodeIntegration':!![]
+    }
+  },_0x119d12.logger={
+    'encoding':"utf8",'level':"INFO",'outputJSON':![],'buffer':!![],'enablePerformanceTimer':![],'rotator':"day",'appLogName':"ee.log",'coreLogName':"ee-core.log",'errorLogName':"ee-error.log"
+  },_0x119d12.remoteUrl={
+    'enable':![],'url':"http://localhost:3000/"
+  },_0x119d12.socketServer={
+    'enable':![],'port':7070,'path':"/socket.io/",'connectTimeout':45000,'pingTimeout':30000,'pingInterval':25000,'maxHttpBufferSize':100000000,'transports':["polling","websocket"],'cors':{
+      'origin':!![]
+    }
+  },_0x119d12.httpServer={
+    'enable':![],'https':{
+      'enable':![],'key':"/public/ssl/localhost+1.key",'cert':"/public/ssl/localhost+1.pem"
+    },'host':"127.0.0.1",'port':7071,'cors':{
+      'origin':'*'
+    },'body':{
+      'multipart':!![],'formidable':{
+        'keepExtensions':!![]
+      }
+    },'filterRequest':{
+      'uris':["favicon.ico"],'returnData':''
+    }
+  },_0x119d12.mainServer={
+    'protocol':"file://",'indexPath':"/public/dist/index.html"
+  },_0x119d12.hardGpu={
+    'enable':!![]
+  },_0x119d12.exception={
+    'mainExit':![],'childExit':!![],'rendererExit':!![]
+  },_0x119d12.jobs={
+    'messageLog':!![]
+  },_0x119d12.addons={
+    'window':{
+      'enable':!![]
+    },'tray':{
+      'enable':![],'title':"EE程序",'icon':"/public/images/tray.png"
+    },'security':{
+      'enable':!![]
+    },'awaken':{
+      'enable':!![],'protocol':'ee','args':[]
+    },'autoUpdater':{
+      'enable':![],'windows':![],'macOS':![],'linux':![],'options':{
+        'provider':"generic",'url':"http://kodo.qiniu.com/"
+      },'force':![]
+    },'axDownloader':{
+      'enable':!![]
+    }
+  },{
+    ..._0x119d12
+  };
+};

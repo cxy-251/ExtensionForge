@@ -1,0 +1,184 @@
+/*
+ * YouTube 专用样式，与 content.js 配套（仅注入 https://www.youtube.com/*）。
+ *
+ * 按功能分为几块：
+ *  - 网页全屏布局：锁定滚动、解除播放器祖先链层叠/裁剪、黑色遮罩、铺满播放器；
+ *  - 播放器控件按钮：网页全屏按钮 + 单视频循环按钮（尺寸/图标风格与原生控件一致）；
+ *  - 频道视频页“全部播放”按钮。
+ */
+
+/* 锁定网页滚动 */
+html.yt-webpage-fullscreen-active:not(.yt-webpage-native-fullscreen),
+html.yt-webpage-fullscreen-active:not(.yt-webpage-native-fullscreen) body {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+/* 解除播放器祖先链上的定位、裁剪与层叠限制（避免宽屏下被 YouTube 层叠/裁剪压住） */
+html.yt-webpage-fullscreen-active:not(.yt-webpage-native-fullscreen)
+  [data-yt-webpage-fullscreen-ancestor="true"] {
+  transform: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  perspective: none !important;
+  contain: none !important;
+  isolation: auto !important;
+  mix-blend-mode: normal !important;
+  opacity: 1 !important;
+  z-index: auto !important;
+  overflow: visible !important;
+  clip: auto !important;
+  clip-path: none !important;
+  mask: none !important;
+  will-change: auto !important;
+}
+
+/* 用独立遮罩覆盖推荐流、评论区和页面其他内容 */
+html.yt-webpage-fullscreen-active:not(.yt-webpage-native-fullscreen)
+  #yt-webpage-fullscreen-backdrop {
+  display: block !important;
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: #000 !important;
+  z-index: 2147483000 !important;
+  pointer-events: auto !important;
+}
+
+#yt-webpage-fullscreen-backdrop {
+  display: none;
+}
+
+/* 将当前播放器固定在遮罩之上 */
+html.yt-webpage-fullscreen-active:not(.yt-webpage-native-fullscreen)
+  #movie_player[data-yt-webpage-fullscreen-player="true"] {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  width: 100dvw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  z-index: 2147483001 !important;
+  background: #000 !important;
+  overflow: hidden !important;
+}
+
+/* 让播放器内部容器跟随视口尺寸 */
+html.yt-webpage-fullscreen-active:not(.yt-webpage-native-fullscreen)
+  #movie_player[data-yt-webpage-fullscreen-player="true"] .html5-video-container,
+html.yt-webpage-fullscreen-active:not(.yt-webpage-native-fullscreen)
+  #movie_player[data-yt-webpage-fullscreen-player="true"] .ytp-player-content {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+}
+
+/* 保持视频比例并居中显示 */
+html.yt-webpage-fullscreen-active:not(.yt-webpage-native-fullscreen)
+  #movie_player[data-yt-webpage-fullscreen-player="true"] video.html5-main-video {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  object-fit: contain !important;
+  object-position: center center !important;
+}
+
+/* 播放器控件按钮：与原生控件一致的尺寸与图标风格 */
+#yt-webpage-fullscreen-button,
+#yt-single-loop-button {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  width: var(--yt-vfs-button-width, 40px) !important;
+  min-width: var(--yt-vfs-button-width, 40px) !important;
+  height: var(--yt-vfs-button-height, 100%) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #fff !important;
+  flex: 0 0 var(--yt-vfs-button-width, 40px) !important;
+  cursor: pointer !important;
+  opacity: 1 !important;
+  transition: opacity 0.15s ease, color 0.15s ease !important;
+}
+
+#yt-webpage-fullscreen-button:hover,
+#yt-single-loop-button:hover {
+  opacity: 1 !important;
+  color: #fff !important;
+}
+
+#yt-webpage-fullscreen-button svg,
+#yt-single-loop-button svg {
+  display: block !important;
+  width: 26px !important;
+  height: 26px !important;
+  flex: 0 0 auto !important;
+  fill: currentColor !important;
+  pointer-events: none !important;
+}
+
+#yt-single-loop-button.yt-loop-active {
+  color: #3ea6ff !important;
+  opacity: 1 !important;
+}
+
+/* ---------- 频道视频页“全部播放”按钮（仅图标，风格同排序胶囊） ---------- */
+#yt-channel-play-all-button {
+  cursor: pointer !important;
+  flex: 0 0 auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  padding: 0 10px !important;
+  margin: 0 0 0 8px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background-color: #f1f1f1 !important;
+  color: #0f0f0f !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 20px !important;
+  transition: background-color 0.2s ease !important;
+}
+
+#yt-channel-play-all-button:hover {
+  background-color: #e5e5e5 !important;
+}
+
+#yt-channel-play-all-button svg {
+  display: block !important;
+  width: 18px !important;
+  height: 18px !important;
+  fill: currentColor !important;
+  flex: 0 0 auto !important;
+}

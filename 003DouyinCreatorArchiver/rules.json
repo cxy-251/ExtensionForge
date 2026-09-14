@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "referer", "operation": "set", "value": "https://www.douyin.com/" },
+        { "header": "origin", "operation": "set", "value": "https://www.douyin.com" }
+      ]
+    },
+    "condition": {
+      "requestDomains": ["douyinvod.com", "zjcdn.com", "douyinpic.com", "iesdouyin.com", "snssdk.com"],
+      "resourceTypes": ["media", "image", "xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "referer", "operation": "set", "value": "https://www.douyin.com/" },
+        { "header": "origin", "operation": "set", "value": "https://www.douyin.com" }
+      ]
+    },
+    "condition": {
+      "requestDomains": ["douyin.com"],
+      "resourceTypes": ["media", "other"]
+    }
+  }
+]

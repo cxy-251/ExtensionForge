@@ -1,0 +1,7 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+
+# Chrome 加载未打包扩展时自动生成的索引/元数据，不是源码，不用进版本控制
+_metadata/

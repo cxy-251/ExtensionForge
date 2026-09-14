@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="popup.css">
+  <title>TikTok 归档助手</title>
+</head>
+<body>
+  <header class="hd">TikTok 创作者作品归档助手</header>
+  <div class="body">
+    <p class="stat" id="q">队列：—</p>
+    <div class="row">
+      <button class="btn" id="btnPause">⏸ 暂停队列</button>
+      <button class="btn" id="btnResume">▶ 继续</button>
+      <button class="btn ghost" id="btnClear">🗑 清空队列</button>
+    </div>
+    <p class="hint">打开 TikTok 创作者主页 / 单视频 / 点赞 / 合集页，右下角会出现采集面板，
+      在面板上操作即可。v1 只支持单页手动采集，还没有批量列表功能。</p>
+    <p class="hint">下载队列是常驻的（存在 chrome.storage 里，重启浏览器也不会自动清空），
+      不想让它继续下就点上面「暂停队列」或「清空队列」。</p>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

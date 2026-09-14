@@ -1,0 +1,19 @@
+{
+  "name": "ee",
+  "version": "3.0.3",
+  "description": "A fast, desktop software development framework",
+  "main": "main.js",
+  "repository": "https://github.com/dromara/electron-egg.git",
+  "author": "公众号：分享角落",
+  "license": "Apache",
+  "dependencies": {
+    "axios": "^1.6.8",
+    "cookie": "^0.6.0",
+    "dayjs": "^1.10.7",
+    "ee-core": "^2.9.2",
+    "electron-dl": "^3.5.2",
+    "electron-updater": "^5.3.0",
+    "https-proxy-agent": "^7.0.4",
+    "lodash": "^4.17.21"
+  }
+}
