@@ -1,6 +1,6 @@
 /* 工具栏弹窗：展示下载队列状态 + 暂停/继续/清空。
- * 队列是常驻的（存在 chrome.storage.local 里的 queue/paused 字段，
- * background.js 的 chrome.runtime.onStartup/onInstalled 会读回来接着跑）——
+ * 队列是常驻的（chrome.storage.local 里一个任务一个 q:<序号> 键 + paused 字段，
+ * background.js 每次拉起都会读回来接着跑）——
  * 重启浏览器不会自动清空，必须手动暂停/清空才能真正停下来。 */
 "use strict";
 

@@ -28,16 +28,134 @@ async function loadSettings() {
   return Object.assign({}, DEFAULTS, settings || {});
 }
 
-async function persist() {
-  await chrome.storage.local.set({ queue, paused });
+// ---------- 持久化队列：一个任务一个键 ----------
+//
+// 以前整条队列是一个 queue 数组存在同一个键下，1500 条带备用直链的任务就有 21MB，
+// 每下完一条就整块重写一遍（节流成 30 条一写也一样），LevelDB 被逼着不停 compaction，
+// Chrome 主进程常年 25~50MB/s 写盘。
+//
+// 现在每个任务单独存成 q:<序号>：
+//   入队          写它自己那个键（几百字节）
+//   开始下载      把 downloadId 记进它的键里
+//   下完/彻底放弃  删它的键
+//   失败重试      改写它的键
+// 任务在"真正下完"之前一直在盘上——service worker 半路被回收、浏览器崩溃都不丢；
+// 重新拉起时靠记下的 downloadId 去问 Chrome 那一条到底下完没有，下完了就直接收尾，
+// 不会再下一遍（conflictAction 是 uniquify，重下会多出一个"xxx (1).mp4"）。
+
+const QKEY = "q:";
+let qseq = 0;
+
+function qkey(n) {
+  return QKEY + String(n).padStart(10, "0");   // 补零让键按字典序 = 入队顺序
 }
 
+function saveItem(item) {
+  if (item.finished) return Promise.resolve();   // 已经收尾删键的，别再写回去
+  return chrome.storage.local.set({ [item.qk]: item })
+    .catch((err) => console.warn("[快手归档] 写队列项失败", item.qk, err));
+}
+
+function dropItem(item) {
+  item.finished = true;
+  return chrome.storage.local.remove(item.qk)
+    .catch((err) => console.warn("[快手归档] 删队列项失败", item.qk, err));
+}
+
+function savePaused() {
+  return chrome.storage.local.set({ paused }).catch(() => {});
+}
+
+// 旧格式（整条 queue 数组）一次性拆成 q:<序号>。序号按旧数组下标定死，分批写——
+// 中途被打断，下次启动重拆一遍写的还是同一批键，覆盖而不是多出一份；全部写完才删旧键。
+// 同一个文件在旧队列里出现多次的（旧版任务一出队就从盘上消失、没下完被重新入队）只留第一条。
+async function migrateLegacyQueue() {
+  const { queue: legacy } = await chrome.storage.local.get("queue");
+  if (legacy === undefined) return;
+  if (Array.isArray(legacy)) {
+    const seen = new Set();
+    let patch = {}, n = 0, dup = 0;
+    for (let i = 0; i < legacy.length; i++) {
+      const it = legacy[i];
+      if (!it || !it.url || seen.has(it.path)) { dup++; continue; }
+      seen.add(it.path);
+      it.id = i + 1;           // 旧 seq 每次 service worker 重启都从 0 数，id 有重复，重新编号
+      it.qk = qkey(it.id);
+      delete it.dlId;
+      patch[it.qk] = it;
+      if (++n % 500 === 0) { await chrome.storage.local.set(patch); patch = {}; }
+    }
+    if (Object.keys(patch).length) await chrome.storage.local.set(patch);
+    console.log("[快手归档] 旧队列已拆分为独立任务", n, "条，去掉重复", dup, "条");
+  }
+  await chrome.storage.local.remove("queue");
+}
+
+// 盘上还挂着 downloadId 的任务：上次下到一半 service worker 没了，完成事件没人接。
+// 问 Chrome 那一条现在什么状态，再决定收尾、接着盯、还是重新排队。
+async function reconcile(item) {
+  let d = null;
+  try { [d] = await chrome.downloads.search({ id: item.dlId }); } catch (_) {}
+  if (d && d.url !== item.url) d = null;          // downloadId 对不上这条任务（历史被清过等）
+  if (d && d.state === "complete") {
+    active++;
+    await onItemDone(item);
+    return;
+  }
+  if (d && d.state === "in_progress") {
+    active++;
+    inflight.set(d.id, item);
+    return;
+  }
+  delete item.dlId;                               // 被中断/找不到：当成还没下，重新排队
+  queue.push(item);
+  await saveItem(item);
+}
+
+async function loadQueue() {
+  await migrateLegacyQueue();
+  const allKeys = chrome.storage.local.getKeys
+    ? await chrome.storage.local.getKeys()                       // Chrome 130+，只取键名
+    : Object.keys(await chrome.storage.local.get(null));
+  const keys = allKeys.filter((k) => k.startsWith(QKEY)).sort();
+  const got = keys.length ? await chrome.storage.local.get(keys) : {};
+  const { paused: p } = await chrome.storage.local.get("paused");
+  paused = Boolean(p);
+  const pending = [];
+  for (const k of keys) {
+    const item = got[k];
+    if (!item || typeof item !== "object") continue;
+    item.qk = k;
+    qseq = Math.max(qseq, Number(k.slice(QKEY.length)) || 0);
+    if (item.dlId != null) pending.push(item);
+    else queue.push(item);
+  }
+  for (const item of pending) await reconcile(item);
+  console.log("[快手归档] 队列已载入", queue.length, "排队 /", active, "下载中");
+}
+
+// 所有读写队列的入口都先等它：消息、下载事件可能比载入先到
+const ready = loadQueue().catch((err) => console.warn("[快手归档] 载入队列失败", err));
+
+let statsMem = null;
+let statsSaveTimer = null;
+
 async function bumpStats(patch) {
-  const { stats } = await chrome.storage.local.get("stats");
-  const next = Object.assign({ done: 0, failed: 0, enqueued: 0 }, stats || {});
-  for (const k of Object.keys(patch)) next[k] = (next[k] || 0) + patch[k];
-  await chrome.storage.local.set({ stats: next });
-  broadcast({ cmd: "stats", stats: next, queued: queue.length, active });
+  if (!statsMem) {
+    const { stats } = await chrome.storage.local.get("stats");
+    statsMem = Object.assign({ done: 0, failed: 0, enqueued: 0 }, stats || {});
+  }
+  for (const k of Object.keys(patch)) statsMem[k] = (statsMem[k] || 0) + patch[k];
+  broadcast({ cmd: "stats", stats: statsMem, queued: queue.length, active });
+
+  if (!statsSaveTimer) {
+    statsSaveTimer = setTimeout(async () => {
+      statsSaveTimer = null;
+      if (statsMem) {
+        try { await chrome.storage.local.set({ stats: statsMem }); } catch (_) {}
+      }
+    }, 3000);
+  }
 }
 
 function broadcast(msg) {
@@ -61,8 +179,6 @@ function joinPath(parts) {
 
 // ---------- 展开作品 -> 下载项 ----------
 
-let seq = 0;
-
 function expand(work, root) {
   const items = [];
   const author = work.author || "未知作者";
@@ -79,7 +195,6 @@ function expand(work, root) {
     .filter(Boolean);
   if (work.kind === "video" && vurls.length) {
     items.push({
-      id: ++seq,
       url: vurls[0],
       urls: vurls,          // 多个直链，前一个失败就换下一个
       urlIdx: 0,
@@ -94,8 +209,7 @@ function expand(work, root) {
     const folder = joinPath([root, author, stem || work.videoId]);
     work.imageUrls.forEach((url, i) => {
       items.push({
-        id: ++seq,
-        url,
+          url,
         path: folder + "/" + String(i + 1).padStart(2, "0") + ".jpg",
         kind: "image",
         tries: 0,
@@ -119,8 +233,6 @@ const arcMem = new Map();   // author -> Set<videoId>（SW 生命周期内的副
 
 async function arcAdd(item) {
   const author = item.author || "未知作者";
-  await chrome.storage.local.set({ ["dl:" + item.workId]: Date.now() });
-
   let set = arcMem.get(author);
   if (!set) {
     const k = "arc:" + author;
@@ -128,9 +240,15 @@ async function arcAdd(item) {
     set = new Set(Array.isArray(got[k]) ? got[k] : []);
     arcMem.set(author, set);
   }
-  if (set.has(item.workId)) return;
-  set.add(item.workId);
-  await chrome.storage.local.set({ ["arc:" + author]: [...set] });
+  const isNew = !set.has(item.workId);
+  if (isNew) {
+    set.add(item.workId);
+  }
+  const patch = { ["dl:" + item.workId]: Date.now() };
+  if (isNew) {
+    patch["arc:" + author] = [...set];
+  }
+  await chrome.storage.local.set(patch);
   scheduleTxt(author);
 }
 
@@ -198,13 +316,13 @@ async function reconcileTxtOnBoot() {
 // ---------- 队列泵 ----------
 
 async function pump() {
+  await ready;
   if (paused) return;
   const { concurrency, betweenMs } = await loadSettings();
 
   while (!paused && active < concurrency && queue.length) {
     const item = queue.shift();
     active++;
-    persist();
 
     try {
       const downloadId = await chrome.downloads.download({
@@ -214,6 +332,8 @@ async function pump() {
         saveAs: false
       });
       inflight.set(downloadId, item);
+      item.dlId = downloadId;
+      saveItem(item);   // 键还留着，只记下 downloadId；下完才删
     } catch (err) {
       active--;
       await onItemFailed(item, String(err && err.message || err));
@@ -226,27 +346,30 @@ async function pump() {
 
 async function onItemDone(item) {
   active = Math.max(0, active - 1);
-  // 按 videoId 记「已下载」——与文件是否被移动/改名/删除无关；并排期写 downloaded.txt
+  // 先记 dl:（去重依据）再删队列键：两步之间被打断，最坏是任务还在队列里，
+  // 下次启动 reconcile 查到已完成、再收尾一次——不会漏记"已下载"
   if (item && item.workId) {
     try { await arcAdd(item); } catch (_) {}
   }
+  await dropItem(item);
   await bumpStats({ done: 1 });
   pump();
 }
 
 async function onItemFailed(item, reason) {
+  delete item.dlId;
   if (item.urls && item.urlIdx + 1 < item.urls.length) {
-    // 换下一个直链重试
     item.urlIdx++;
     item.url = item.urls[item.urlIdx];
     item.tries = 0;
     queue.push(item);
-    persist();
+    await saveItem(item);
   } else if (item.tries + 1 < DEFAULTS.maxTries) {
     item.tries++;
     queue.push(item);
-    persist();
+    await saveItem(item);
   } else {
+    await dropItem(item);
     await bumpStats({ failed: 1 });
     console.warn("[快手归档] 放弃下载", item.path, reason);
   }
@@ -254,13 +377,15 @@ async function onItemFailed(item, reason) {
 }
 
 chrome.downloads.onChanged.addListener(async (delta) => {
+  if (!delta.state) return;
+  await ready;
   const item = inflight.get(delta.id);
   if (!item) return;
 
-  if (delta.state && delta.state.current === "complete") {
+  if (delta.state.current === "complete") {
     inflight.delete(delta.id);
     await onItemDone(item);
-  } else if (delta.state && delta.state.current === "interrupted") {
+  } else if (delta.state.current === "interrupted") {
     inflight.delete(delta.id);
     active = Math.max(0, active - 1);
     await onItemFailed(item, delta.error ? delta.error.current : "interrupted");
@@ -274,39 +399,65 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.cmd === "enqueue") {
     (async () => {
+      await ready;
       const { saveRoot } = await loadSettings();
-      let n = 0;
+      // 同一个文件已经在排队或正在下（连点两次「下载全部」、两个标签页各点一次），
+      // 不再重复入队，否则 uniquify 会存出 "xxx (1).mp4"
+      const taken = new Set(queue.map((it) => it.path));
+      for (const it of inflight.values()) taken.add(it.path);
+      const patch = {};
+      let n = 0, dup = 0;
       for (const w of msg.works || []) {
-        const items = expand(w, saveRoot);
-        queue.push(...items);
-        n += items.length;
+        for (const item of expand(w, saveRoot)) {
+          if (taken.has(item.path)) { dup++; continue; }
+          taken.add(item.path);
+          item.id = ++qseq;
+          item.qk = qkey(item.id);
+          patch[item.qk] = item;
+          queue.push(item);
+          n++;
+        }
       }
-      await persist();
+      if (n) await chrome.storage.local.set(patch);
       await bumpStats({ enqueued: n });
       pump();
-      sendResponse({ ok: true, added: n, queued: queue.length });
+      sendResponse({ ok: true, added: n, skipped: dup, queued: queue.length });
     })();
     return true;
   }
 
   if (msg.cmd === "getState") {
     (async () => {
-      const { stats } = await chrome.storage.local.get("stats");
+      await ready;
+      if (!statsMem) {
+        const { stats } = await chrome.storage.local.get("stats");
+        statsMem = Object.assign({ done: 0, failed: 0, enqueued: 0 }, stats || {});
+      }
       const settings = await loadSettings();
       sendResponse({
         queued: queue.length,
         active,
         paused,
-        stats: stats || { done: 0, failed: 0, enqueued: 0 },
+        stats: statsMem,
         settings
       });
     })();
     return true;
   }
 
-  if (msg.cmd === "pauseQueue") { paused = true; persist(); sendResponse({ paused }); return; }
-  if (msg.cmd === "resumeQueue") { paused = false; persist(); pump(); sendResponse({ paused }); return; }
-  if (msg.cmd === "clearQueue") { queue = []; persist(); sendResponse({ queued: 0 }); return; }
+  if (msg.cmd === "pauseQueue") { paused = true; savePaused(); sendResponse({ paused }); return; }
+  if (msg.cmd === "resumeQueue") { paused = false; savePaused(); pump(); sendResponse({ paused }); return; }
+  if (msg.cmd === "clearQueue") {
+    (async () => {
+      await ready;
+      const dropped = queue;
+      queue = [];
+      dropped.forEach((it) => { it.finished = true; });
+      if (dropped.length) await chrome.storage.local.remove(dropped.map((it) => it.qk)).catch(() => {});
+      sendResponse({ queued: 0 });
+    })();
+    return true;
+  }
 
   if (msg.cmd === "saveSettings") {
     chrome.storage.local.set({ settings: msg.settings }).then(() => sendResponse({ ok: true }));
@@ -315,15 +466,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // ---------- 续跑 ----------
+//
+// 顶层的 loadQueue()（上面的 ready）在 service worker 每次被拉起时都会跑一次，
+// 浏览器启动/插件安装更新也是靠它，不用再挂 onStartup/onInstalled（以前三处都调
+// resume，一次启动会并发载入三遍）。
 
-async function resume() {
-  const { queue: q, paused: p } = await chrome.storage.local.get(["queue", "paused"]);
-  queue = Array.isArray(q) ? q : [];
-  paused = Boolean(p);
+ready.then(() => {
   if (queue.length) pump();
   reconcileTxtOnBoot().catch(() => {});
-}
-
-chrome.runtime.onStartup.addListener(resume);
-chrome.runtime.onInstalled.addListener(resume);
-resume();
+});

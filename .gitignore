@@ -5,3 +5,6 @@ Thumbs.db
 
 # Chrome 加载未打包扩展时自动生成的索引/元数据，不是源码，不用进版本控制
 _metadata/
+
+# 本机调试时备份的扩展存储（LevelDB，含下载队列/直链等个人数据），不进库
+backup_storage/
