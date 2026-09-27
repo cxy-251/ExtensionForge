@@ -81,6 +81,11 @@
     try { return JSON.parse(text); } catch { return null; }
   }
 
+  // 抖音信息流里最大、最频繁的响应本来就是视频分片/图片/字体这些二进制体，天生不可能
+  // 是作品接口的 JSON 回包，靠 content-type/长度直接排除，省下整段 clone().text() 解码。
+  const BINARY_CT_RE = /^(video|audio|image|font)\//i;
+  const MAX_SCAN_BYTES = 3_000_000;   // aweme_list 分页 JSON 远小于此，视频分片/图片远大于此
+
   // 有的响应 URL 平平无奇，但正文明显是作品数据，也收
   function forward(meta, text) {
     const looksData = KEYWORDS.test(text.slice(0, 4000)) || KEYWORDS.test(text.slice(-2000));
@@ -89,6 +94,22 @@
     const srcType = classifyUrl(meta.url);
     post({ kind: "debug", url: meta.url, method: meta.method, status: meta.status || 0, len: text.length, parsed: !!json });
     if (json) post({ kind: "api", entry: { url: meta.url, method: meta.method, reqBody: meta.reqBody || "", json, srcType, at: Date.now() } });
+  }
+
+  // XHR responseType === "json" 时浏览器已经帮我们解析好了对象，不用先 JSON.stringify
+  // 变回文本、再让 forward() 里的 safeParse() 解析回去——已知接口 URL 时直接按"已解析
+  // 对象"这条路径走，一次 JSON 转换都不用做；只有 URL 本身不像已知接口时才现转一次
+  // 文本去过关键词兜底扫描（这条本来就是小概率兜底分支）。
+  function forwardParsedJson(meta, jsonObj) {
+    const interesting = isInterestingUrl(meta.url);
+    let text = "";
+    if (!interesting) {
+      try { text = JSON.stringify(jsonObj); } catch (_) { text = ""; }
+      if (!(KEYWORDS.test(text.slice(0, 4000)) || KEYWORDS.test(text.slice(-2000)))) return;
+    }
+    const srcType = classifyUrl(meta.url);
+    post({ kind: "debug", url: meta.url, method: meta.method, status: meta.status || 0, len: text.length, parsed: true });
+    post({ kind: "api", entry: { url: meta.url, method: meta.method, reqBody: meta.reqBody || "", json: jsonObj, srcType, at: Date.now() } });
   }
 
   // ---------- fetch ----------
@@ -103,6 +124,10 @@
       try {
         p.then((res) => {
           try {
+            const ct = (res.headers && res.headers.get && res.headers.get("content-type")) || "";
+            if (BINARY_CT_RE.test(ct)) return;
+            const len = Number((res.headers && res.headers.get && res.headers.get("content-length")) || 0);
+            if (len > MAX_SCAN_BYTES) return;
             const status = res.status;
             res.clone().text().then((t) => forward({ url, method, reqBody, status }, t)).catch(() => {});
           } catch (_) {}
@@ -128,11 +153,19 @@
       if (meta) {
         this.addEventListener("load", () => {
           try {
+            let ct = "";
+            try { ct = this.getResponseHeader("content-type") || ""; } catch (_) {}
+            if (BINARY_CT_RE.test(ct)) return;
             const type = this.responseType;
-            let text = "";
-            if (type === "" || type === "text") text = this.responseText;
-            else if (type === "json" && this.response) text = JSON.stringify(this.response);
-            if (text) forward({ url: meta.url, method: meta.method, reqBody: typeof body === "string" ? body : "", status: this.status }, text);
+            const reqBody = typeof body === "string" ? body : "";
+            if (type === "json" && this.response) {
+              forwardParsedJson({ url: meta.url, method: meta.method, reqBody, status: this.status }, this.response);
+            } else if (type === "" || type === "text") {
+              const text = this.responseText;
+              if (text && text.length <= MAX_SCAN_BYTES) {
+                forward({ url: meta.url, method: meta.method, reqBody, status: this.status }, text);
+              }
+            }
           } catch (_) {}
         });
       }
@@ -143,6 +176,12 @@
 
   // ---------- 初始状态对象 ----------
 
+  // key -> 上一次 JSON.stringify 的文本。这几个全局状态对象在信息流页面上通常不小，
+  // 深拷贝（JSON.parse(JSON.stringify(...))）本身就不便宜；轮询期间大多数 tick 其实
+  // 什么都没变，值不值得再花一次 JSON.parse + postMessage 靠这个缓存判断——没变就直接
+  // 跳过，只有 stringify 这一次扫描省不掉（要拿它来判断"变没变"本身）。
+  const _lastDumpText = {};
+
   function dumpState(reason) {
     const keys = ["__INITIAL_STATE__", "__NUXT__", "INIT_STATE", "__DATA__", "RENDER_DATA"];
     for (const k of keys) {
@@ -150,26 +189,38 @@
       try { v = window[k]; } catch { continue; }
       if (v && typeof v === "object") {
         try {
-          const json = JSON.parse(JSON.stringify(v));
-          post({ kind: "state", key: k, reason, json, at: Date.now() });
+          const text = JSON.stringify(v);
+          if (text === _lastDumpText[k]) continue;
+          _lastDumpText[k] = text;
+          post({ kind: "state", key: k, reason, json: JSON.parse(text), at: Date.now() });
         } catch (_) {}
       }
     }
     // 抖音有的页面把首屏数据塞进一个 <script id="RENDER_DATA"> 里，URL-encode 过的 JSON
     try {
       const el = document.getElementById("RENDER_DATA");
-      if (el && el.textContent) {
+      if (el && el.textContent && el.textContent !== _lastDumpText["RENDER_DATA#script"]) {
+        _lastDumpText["RENDER_DATA#script"] = el.textContent;
         const json = JSON.parse(decodeURIComponent(el.textContent));
         post({ kind: "state", key: "RENDER_DATA#script", reason, json, at: Date.now() });
       }
     } catch (_) {}
   }
 
+  // 原来固定跑 20 次 x 2s = 40 秒，不管页面早就加载完了还是一直没完成都是这个时长。
+  // 现在改成"页面 complete 后再等 2 个 tick 收尾就停"，配合上面的按内容去重，
+  // 稳定态（没有新内容）下这个定时器几乎不再产生实际开销。
   let stateTicks = 0;
+  let ticksAfterLoad = 0;
+  const STATE_POLL_MAX_TICKS = 10;
   const stateTimer = setInterval(() => {
     stateTicks++;
     dumpState("poll");
-    if (stateTicks > 20) clearInterval(stateTimer);
+    if (document.readyState === "complete") {
+      ticksAfterLoad++;
+      if (ticksAfterLoad >= 2) { clearInterval(stateTimer); return; }
+    }
+    if (stateTicks >= STATE_POLL_MAX_TICKS) clearInterval(stateTimer);
   }, 2000);
   window.addEventListener("load", () => dumpState("load"));
 })();
