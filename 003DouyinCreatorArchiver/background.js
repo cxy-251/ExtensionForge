@@ -436,9 +436,65 @@ async function onItemFailed(item, reason) {
   pump();
 }
 
+// ---------- 清理下载记录 ----------
+//
+// chrome.downloads 每下一个文件就在 Chrome 下载历史里留一条记录，Chrome 自己从不清。
+// 归档动辄几万个文件，记录攒到二十多万条时 History 库两百多 MB，Chrome 启动要把它们
+// 全读进内存、下载列表每次变动也要过一遍——冷启动卡、平时卡、内存高。
+// 这里只删「记录」（erase 不碰盘上文件），而且不是下一个删一个：结束的下载攒够
+// ERASE_EVERY 个、或队列跑空时扫一遍，只挑本扩展发起的、已结束的、不在 inflight 里的
+// （还没收尾的留给 reconcile 查）。浏览器启动 / 扩展安装重载时再扫一遍，兜住 service
+// worker 中途被回收时没来得及清的——第一次重载扩展也就顺手把旧的存量清掉了。
+const ERASE_EVERY = 200;
+const SWEEP_PAGE = 500;
+let endedSinceSweep = 0;
+let sweeping = null;
+let sweepAgain = false;
+let sweepTimer = null;
+
+function noteDownloadEnded() {
+  if (++endedSinceSweep >= ERASE_EVERY) sweepRecords();
+}
+
+function sweepSoon() {
+  clearTimeout(sweepTimer);
+  sweepTimer = setTimeout(sweepRecords, 10_000);
+}
+
+function sweepRecords() {
+  if (sweeping) { sweepAgain = true; return sweeping; }
+  endedSinceSweep = 0;
+  sweeping = (async () => {
+    await ready;
+    let erased = 0, cursor = null;
+    for (;;) {
+      // 按开始时间分页往后翻，一次只拿一页，存量二十万条时也不会一口气把全部记录搬过来
+      const q = { orderBy: ["startTime"], limit: SWEEP_PAGE };
+      if (cursor) q.startedAfter = cursor;
+      let page;
+      try { page = await chrome.downloads.search(q); } catch (_) { break; }
+      const mine = page.filter((d) => d.byExtensionId === chrome.runtime.id &&
+        d.state !== "in_progress" && !inflight.has(d.id));
+      await Promise.all(mine.map((d) => chrome.downloads.erase({ id: d.id }).catch(() => {})));
+      erased += mine.length;
+      if (page.length < SWEEP_PAGE) break;
+      cursor = page[page.length - 1].startTime;
+    }
+    if (erased) console.log("[抖音归档] 已清理下载记录", erased, "条");
+  })().finally(() => {
+    sweeping = null;
+    if (sweepAgain) { sweepAgain = false; sweepRecords(); }
+  });
+  return sweeping;
+}
+
+chrome.runtime.onStartup.addListener(() => { sweepRecords(); });
+chrome.runtime.onInstalled.addListener(() => { sweepRecords(); });
+
 chrome.downloads.onChanged.addListener(async (delta) => {
   if (!delta.state) return;
   await ready;
+  if (delta.state.current !== "in_progress") noteDownloadEnded();
   const item = inflight.get(delta.id);
   if (!item) return;
 
@@ -450,6 +506,7 @@ chrome.downloads.onChanged.addListener(async (delta) => {
     active = Math.max(0, active - 1);
     await onItemFailed(item, delta.error ? delta.error.current : "interrupted");
   }
+  if (!queue.length && !active) sweepSoon();       // 这一批跑空了，等最后的 downloaded.txt 写完再清
 });
 
 // ---------- 消息 ----------
