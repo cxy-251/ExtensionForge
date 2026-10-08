@@ -9,6 +9,8 @@
  *   theme           { head, accent, on, images, imagesInk }
  *   profileOwner()  当前页面是创作者主页「作品」页时返回主页主人的 id，否则返回 ""；
  *                   返回 "" 的页面一律不出面板、不采集
+ *   contextOwner()  可选：当前页面属于哪个作者（含主页里点开的作品页），用来决定面板
+ *                   要不要继续显示；不提供就等同 profileOwner()
  *   parsePayload(entry)   作品列表回包 / 首屏状态 → Work 数组
  *   kindOf(work)          合并多次回包后重新判定 "video" / "images"
  *   authorFromPage()      还没采到作者名时，从页面上猜一个

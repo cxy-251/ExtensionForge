@@ -97,6 +97,14 @@
       if (tab && tab !== "videos") return "";
       return decodeURIComponent(m[1]).toLowerCase();
     },
+    // 主页里点开作品，网址变成 /@作者/video/<id>（图文是 /photo/<id>），仍算这个作者
+    contextOwner() {
+      const m = location.pathname.match(/^\/@([^/?#]+)(?:\/(?:video|photo)\/\d+)?\/?$/);
+      if (!m) return "";
+      const tab = (new URLSearchParams(location.search).get("tab") || "").toLowerCase();
+      if (tab && tab !== "videos") return "";
+      return decodeURIComponent(m[1]).toLowerCase();
+    },
     authorFromPage() {
       const m = location.pathname.match(/^\/@([^/?#]+)/);
       return m ? decodeURIComponent(m[1]) : "";

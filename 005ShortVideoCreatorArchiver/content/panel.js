@@ -2,7 +2,8 @@
  * 采集面板 + 采集流程，三个平台共用。平台相关的部分全部走 SVA.adapter。
  *
  * 只在创作者主页「作品」页工作（adapter.profileOwner() 非空）：自动下滑采集作品、
- * 一键入队下载。离开主页面板就收起，回来重新出现。
+ * 一键入队下载。打开这个作者自己的视频（adapter.contextOwner()）面板照常显示；去了别的
+ * 页面面板收起但采集结果留着，回到同一个作者的主页原样恢复；进了另一个作者的主页才清空。
  *
  *  - 面板挂在 Shadow DOM 里，样式用 constructable stylesheet 注入——宿主页面的 reset
  *    样式进不来，也不受页面 CSP 的 style-src 限制；
@@ -33,7 +34,9 @@
   });
 
   const S = {
-    owner: A.profileOwner(),   // 当前主页主人；"" = 不是创作者主页作品页
+    owner: A.profileOwner(),   // 正在采集的作者（主页主人）；"" = 还没进过创作者主页
+    visible: false,            // 当前页面属于 owner（主页或其视频页）才显示面板、才收回包
+    status: "",                // 面板收起再出现时要能还原
     works: new Map(),          // videoId -> work
     downloaded: new Set(),     // 已下载过的 videoId（来自 dl:<platform>:<id>）
     collapsed: false,
@@ -61,20 +64,33 @@
 
   // ---------- 页面切换 ----------
   //
-  // 站内跳转不刷新页面：换了主页、切到点赞/合集标签、点进单个视频，采集列表都清空，
-  // 不是主页作品页就把面板收起来。不能把这个标签页之前看过的别的页面的作品算进来。
+  // 站内跳转不刷新页面。只有进了「另一个作者」的主页才清空重来；在主页里点开自己的视频
+  // （TikTok 网址会变成 /@作者/video/<id>）不算离开。去了别的页面只把面板收起，采集结果
+  // 留着——旁路采集拿不回已经加载过的列表（滑到底后再滑不会重新请求），丢了只能刷新页面重来。
+  // 混进别人作品的风险由 ingest 里的作者 id 比对兜着，不靠清空。
+
+  function pageOwner() {
+    return A.contextOwner ? A.contextOwner() : A.profileOwner();
+  }
 
   function syncPage() {
-    const owner = A.profileOwner();
-    if (owner === S.owner) return;
-    S.owner = owner;
-    S.works.clear();
-    S.downloaded.clear();
-    if (S.autoRunning) S.autoRunning = false;
-    if (!owner) { removePanel(); return; }
-    renderPanel();
-    setStatus("");
+    const profile = A.profileOwner();
+    if (profile && profile !== S.owner) {
+      S.owner = profile;
+      S.works.clear();
+      S.downloaded.clear();
+      S.autoRunning = false;
+      S.visible = true;
+      S.status = "";
+      renderPanel();
+      return;
+    }
+    const visible = !!S.owner && pageOwner() === S.owner;
+    if (visible === S.visible) return;
+    S.visible = visible;
+    if (visible) renderPanel(); else removePanel();
   }
+  S.visible = !!S.owner;
   setInterval(syncPage, 1000);
 
   // ---------- 入库 ----------
@@ -84,7 +100,7 @@
 
   function ingest(kind, entry) {
     syncPage();
-    if (!S.owner) return;
+    if (!S.visible) return;
 
     let parsed = [];
     try { parsed = A.parsePayload(entry); } catch (err) { LOG("解析异常", err); }
@@ -284,9 +300,10 @@
   }
 
   function renderPanel() {
-    if (!S.owner) return;
+    if (!S.visible) return;
     ensurePanel();
     $(".panel").classList.toggle("collapsed", S.collapsed);
+    $(".status").textContent = S.status;
 
     const items = [...S.works.values()];
     const doneN = items.filter((w) => S.downloaded.has(w.videoId)).length;
@@ -320,8 +337,9 @@
   }
 
   function setStatus(text) {
+    S.status = text || "";
     const el = $(".status");
-    if (el) el.textContent = text || "";
+    if (el) el.textContent = S.status;
   }
 
   function onPanelClick(event) {
@@ -458,8 +476,12 @@
     dispatchWheelNudge(delta);
   }
 
+  // 只在作品列表页滑：打开了视频（播放层里往下滑会切到下一个视频）或去了别的页面就暂停
+  const onListPage = (owner) => A.profileOwner() === owner;
+
   async function startAuto() {
     if (S.autoRunning || !S.owner) return;
+    if (!onListPage(S.owner)) { setStatus("先回到作者的作品列表页，再点「自动采集」"); return; }
     S.autoRunning = true;
     const owner = S.owner;
     renderPanel();
@@ -467,7 +489,7 @@
     let idle = 0, round = 0;
     const start = S.works.size;
 
-    while (S.autoRunning && S.owner === owner) {
+    while (S.autoRunning && onListPage(owner)) {
       if (captchaVisible()) {
         stopAuto("检测到安全验证，已暂停 —— 在页面完成验证后再点「自动采集」");
         return;
@@ -475,6 +497,7 @@
       const before = S.works.size;
       scrollFeedDown();
       await sleep(rand(CFG.scrollMinGap, CFG.scrollMaxGap));
+      if (!onListPage(owner)) break;
       if (Math.random() < 0.3) { scrollFeedBy(-Math.round(rand(200, 500))); await sleep(rand(300, 700)); }
 
       round++;
@@ -485,7 +508,11 @@
       renderPanel();
       if (idle >= CFG.idleRoundsStop) break;
     }
-    if (S.owner !== owner) return;   // 中途离开了这个主页，syncPage 已经清场
+    if (S.owner !== owner) return;   // 中途进了别的作者主页，syncPage 已经清场
+    if (!onListPage(owner)) {
+      stopAuto(`自动采集已暂停（打开了视频或离开了作品页），已采集 ${S.works.size} 条，回到作品页再点「自动采集」接着滑`);
+      return;
+    }
 
     stopAuto(`自动采集结束：新增 ${S.works.size - start} 条，共 ${S.works.size} 条` +
       (S.works.size === 0 ? "（0 条：确认已登录，刷新页面再试；F12 Console 里有每次接口回包的记录）" : ""));
@@ -499,7 +526,7 @@
 
   // ---------- 启动 ----------
 
-  const boot = () => { if (S.owner) renderPanel(); };
+  const boot = () => { if (S.visible) renderPanel(); };
   boot();
   setTimeout(boot, 1200);
 
