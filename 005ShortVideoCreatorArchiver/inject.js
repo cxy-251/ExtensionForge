@@ -3,6 +3,8 @@
  *
  * 只做一件事：把「创作者主页作品列表」接口的 JSON 响应抄一份 postMessage 给隔离世界的
  * content 脚本，外加页面首屏的初始状态对象（首屏那一页作品有时直接内嵌在里面）。
+ * 小红书例外：列表在页面状态里（滑动时页面自己往里追加），地址要点开笔记后的详情接口才有，
+ * 所以多转发一个笔记详情接口，状态也可以由 content 随时要一份（kind: "dump-state"）。
  * 不重放、不改写请求，只旁路读——所以完全不用碰各家的请求签名。
  * 不认识的接口一律不转发，不做内容嗅探：点赞、合集、详情、推荐流都不收。
  *
@@ -19,7 +21,7 @@
     kuaishou: {
       hosts: /(^|\.)kuaishou\.com$/,
       // 网页版主页作品走 graphql（operationName visionProfilePhotoList，在请求体里），
-      // 老接口/移动端是 profile/public、profile/feed —— 参考 dyd/src-deobfuscated/service/ks.annotated.js
+      // 老接口/移动端是 profile/public、profile/feed —— 参考 DyD 的 ks.annotated.js（git 历史 33ae62f:dyd/）
       isProfileFeed: (url, body) =>
         (/\/graphql/i.test(url) && /visionProfilePhotoList/.test(body)) ||
         /\/profile\/(public|feed)\b/i.test(url),
@@ -38,6 +40,26 @@
       isProfileFeed: (url) => /\/api\/post\/item_list/i.test(url),
       windowKeys: [],
       scriptIds: [{ id: "__UNIVERSAL_DATA_FOR_REHYDRATION__" }, { id: "SIGI_STATE" }]
+    },
+    xiaohongshu: {
+      hosts: /(^|\.)xiaohongshu\.com$/,
+      // feed = 点开笔记时页面自己请求的详情；user_posted = 主页列表翻页（实测列表走页面状态，兜底一下）
+      isProfileFeed: (url) => /\/api\/sns\/web\/v1\/(feed|user_posted)\b/i.test(url),
+      windowKeys: [],
+      scriptIds: [],
+      // 整个 __INITIAL_STATE__ 很大，只抄主页「笔记」栏的列表和已经打开过的笔记详情。
+      // 里面是 Vue 的 ref，值在 _rawValue / _value 上
+      stateFn() {
+        const st = window.__INITIAL_STATE__;
+        if (!st) return null;
+        const raw = (x) => x && (x._rawValue ?? x._value ?? x);
+        const tabs = raw(st.user && st.user.notes);
+        const map = raw(st.note && st.note.noteDetailMap) || {};
+        return {
+          xhsList: Array.isArray(tabs) && Array.isArray(tabs[0]) ? tabs[0] : [],
+          xhsDetails: Object.values(map).map((x) => x && x.note).filter((n) => n && n.noteId)
+        };
+      }
     }
   };
 
@@ -68,9 +90,12 @@
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
     const d = event.data;
-    if (d && d.source === TAG && d.kind === "content-ready") {
+    if (!d || d.source !== TAG) return;
+    if (d.kind === "content-ready") {
       contentReady = true;
       while (buffer.length) window.postMessage(buffer.shift(), location.origin);
+      dumpState();
+    } else if (d.kind === "dump-state") {
       dumpState();
     }
   });
@@ -146,6 +171,16 @@
         if (text === lastDumpText[k]) continue;
         lastDumpText[k] = text;
         post({ kind: "state", key: k, json: JSON.parse(text), at: Date.now() });
+      } catch (_) {}
+    }
+    if (C.stateFn) {
+      try {
+        const v = C.stateFn();
+        const text = v && JSON.stringify(v);
+        if (text && text !== lastDumpText.stateFn) {
+          lastDumpText.stateFn = text;
+          post({ kind: "state", key: "stateFn", json: JSON.parse(text), at: Date.now() });
+        }
       } catch (_) {}
     }
     for (const s of C.scriptIds) {

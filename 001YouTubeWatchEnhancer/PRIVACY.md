@@ -26,7 +26,7 @@
 
 联系与支持：
 
-https://github.com/cxy-251/PyGitRep001/issues
+https://github.com/cxy-251/ExtensionForge/issues
 
 YouTube is a trademark of Google LLC. This extension is not affiliated with or endorsed by Google LLC.
 
@@ -56,6 +56,6 @@ The extension has no backend server and does not persist webpage content. Runtim
 
 Contact and support:
 
-https://github.com/cxy-251/PyGitRep001/issues
+https://github.com/cxy-251/ExtensionForge/issues
 
 YouTube is a trademark of Google LLC. This extension is not affiliated with or endorsed by Google LLC.

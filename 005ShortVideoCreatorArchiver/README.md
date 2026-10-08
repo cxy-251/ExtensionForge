@@ -1,4 +1,4 @@
-# 005 短视频创作者作品归档助手（快手 / 抖音 / TikTok）
+# 005 短视频创作者作品归档助手（快手 / 抖音 / TikTok / 小红书）
 
 002/003/004 合并后的版本，只做一件事：**在创作者主页上不停下滑采集作品，然后入队下载**。
 旧插件已移除（见 git 历史）；还装着的话要先停用，它们和 005 会写同一份 `downloaded.txt`、互相覆盖。
@@ -12,9 +12,10 @@
 | 快手 | `www.kuaishou.com/profile/<id>` | `graphql`（`visionProfilePhotoList`）、`profile/public`、`profile/feed` |
 | 抖音 | `www.douyin.com/user/<sec_uid>`（无 `showTab` 或 `showTab=post`） | `aweme/post` + 首屏 `RENDER_DATA` |
 | TikTok | `www.tiktok.com/@<uniqueId>` | `/api/post/item_list` + 首屏 `__UNIVERSAL_DATA_FOR_REHYDRATION__` |
+| 小红书 | `www.xiaohongshu.com/user/profile/<id>`（「笔记」栏） | 列表：页面状态 `__INITIAL_STATE__.user.notes`；详情：点开笔记时的 `/api/sns/web/v1/feed` |
 
 每条作品还会按作者 id 和主页主人比对一次（快手 `author.id`、抖音 `author.sec_uid`、
-TikTok `author.uniqueId`），对不上的丢掉。
+TikTok `author.uniqueId`、小红书 `user.userId`），对不上的丢掉。
 
 站内跳转：在主页里点开作品（TikTok 网址会变成 `/@作者/video/<id>`）面板照常显示；去了别的页面
 面板收起、采集结果保留，回到同一个作者的主页原样恢复；进了另一个作者的主页才清空。
@@ -29,20 +30,41 @@ TikTok `author.uniqueId`），对不上的丢掉。
 5. 面板上有一行队列数字：排队 / 下载中 / 完成 / 失败；
 6. 点浏览器工具栏的扩展图标（气泡）：**⏸ 暂停出队 / ▶ 继续出队**、**🗑 清空全部排队**、**📂 从磁盘导入已下记录**。
 
+面板上的队列数字只显示当前平台；其它平台也有在排队/下载的，会补一句。
+
 暂停只拦截出队，已经交给浏览器的下载照常下完，适合临时把带宽让出来。
-队列三个平台共用一条，常驻在 `chrome.storage`，重启浏览器后接着下。
+
+**失败清单**（在气泡里）：一个文件把所有候选直链都试完还没下成功，会按「平台 · 作者」记进清单，
+点作品标题打开作品页。「🔁 重试失败」用当时的直链再下一次（小红书图片不会过期，多半能成；抖音/TikTok
+直链几小时就失效，还失败就回作者主页重新采集再「下载全部」）。下载成功的自动从清单消失。
+清单按文件记：图集里只要有一张下成功，作品就算「已下载」，「下载全部」以后会跳过它，没下成功的那几张只能靠清单补。
+每个平台各走一条下载通道（同时各下 1 个，不同平台互不排队）；队列常驻在 `chrome.storage`，重启浏览器后接着下。
+
+## 小红书：后台逐篇取详情
+
+小红书主页列表里只有笔记 id 和标题，图片/视频地址不在列表里。所以小红书的「自动采集」是两件事同时做：
+往下滑让页面加载出全部笔记，同时在后台逐篇请求笔记网页 `/explore/<id>?xsec_token=…`，从网页里内嵌的
+数据取出图片和视频地址。面板上会显示「待取详情 N」。
+
+- 不碰小红书的接口签名：请求的是普通笔记网页，带的是你自己的登录 Cookie，和在新标签页打开那篇笔记一样；
+- 每篇间隔 1~2 秒，两百篇大约 5 分钟；页面上不会弹出任何东西，标签页放到后台也能跑；
+- 请求被跳去登录页、验证页，或者没返回数据，会立即停下并提示——多半是触发了风控，歇一会儿再接着取；
+- 一篇最多试 2 次（失败的放到最后重试），取不到的留在「待取详情」里，多半是已删除；
+- 在主页里自己点开笔记时，页面请求的详情也会被顺手收下；
+- 图片下原图（`sns-img-bd.xhscdn.com/<fileId>`，无水印、不过期），扩展名按实际类型（jpg/webp/png）；
+  视频取分辨率最高的一档。
 
 ## 保存位置
 
-`<Chrome 下载目录>/<快手|抖音|TikTok>/<作者>/`：视频 `日期_标题_id.mp4`，图集一个作品一个文件夹。
-每个作者文件夹里有一份 `downloaded.txt`（`kuaishou|douyin|tiktok <id>`，兼容 yt-dlp `--download-archive`）。
+`<Chrome 下载目录>/<快手|抖音|TikTok|小红书>/<作者>/`：视频 `日期_标题_id.mp4`，图集一个作品一个文件夹。
+每个作者文件夹里有一份 `downloaded.txt`（`kuaishou|douyin|tiktok|xiaohongshu <id>`，兼容 yt-dlp `--download-archive`）。
 
 ## 与 002/003/004 的区别
 
 （每一条背后的坑见 `../docs/踩坑记录.md`）
 
 - 去重键带平台前缀：`dl:<platform>:<id>`、`arc:<platform>:<author>`；
-- Cookie 动态规则 ID 分段：快手 1xxx、抖音 2xxx、TikTok 3xxx，`requestDomains` 只限本平台域名；
+- Cookie 动态规则 ID 分段：快手 1xxx、抖音 2xxx、TikTok 3xxx、小红书 4xxx，`requestDomains` 只限本平台域名；
 - 面板在 Shadow DOM 里，不受页面样式影响；面板只管采集和入队，队列控制都在气泡里；
 - 只靠 manifest `world: "MAIN"` 注入 `inject.js`，去掉了 `<script>` 兜底注入；
 - 新扩展的存储是空的，读不到 002/003/004 的记录，要先从磁盘导入一次（见下）。

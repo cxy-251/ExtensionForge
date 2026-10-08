@@ -76,5 +76,19 @@
       "requestDomains": ["tiktok.com"],
       "resourceTypes": ["media", "other"]
     }
+  },
+  {
+    "id": 4001,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "referer", "operation": "set", "value": "https://www.xiaohongshu.com/" }
+      ]
+    },
+    "condition": {
+      "requestDomains": ["xhscdn.com"],
+      "resourceTypes": ["media", "image", "xmlhttprequest", "other"]
+    }
   }
 ]

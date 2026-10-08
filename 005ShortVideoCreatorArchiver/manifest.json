@@ -3,8 +3,8 @@
   "name": "短视频创作者作品归档助手",
   "short_name": "短视频归档助手",
   "version": "0.1",
-  "description": "快手 / 抖音 / TikTok 创作者主页作品归档：在创作者主页自动下滑采集作品，一键入队批量下载。",
-  "homepage_url": "https://github.com/cxy-251/PyGitRep001/tree/main/ExtensionForge/005ShortVideoCreatorArchiver",
+  "description": "快手 / 抖音 / TikTok / 小红书 创作者主页作品归档：在创作者主页自动采集作品，一键入队批量下载。",
+  "homepage_url": "https://github.com/cxy-251/ExtensionForge/tree/main/005ShortVideoCreatorArchiver",
   "minimum_chrome_version": "111",
   "permissions": [
     "downloads",
@@ -37,7 +37,9 @@
     "*://*.tiktokv.us/*",
     "*://*.muscdn.com/*",
     "*://*.ibyteimg.com/*",
-    "*://*.byteoversea.com/*"
+    "*://*.byteoversea.com/*",
+    "*://*.xiaohongshu.com/*",
+    "*://*.xhscdn.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -61,7 +63,8 @@
         "*://*.kuaishou.com/*",
         "*://*.douyin.com/*",
         "*://*.iesdouyin.com/*",
-        "*://*.tiktok.com/*"
+        "*://*.tiktok.com/*",
+        "*://*.xiaohongshu.com/*"
       ],
       "js": [
         "inject.js"
@@ -102,6 +105,18 @@
       "js": [
         "content/common.js",
         "content/adapter-tiktok.js",
+        "content/panel.js"
+      ],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://*.xiaohongshu.com/*"
+      ],
+      "js": [
+        "content/common.js",
+        "content/adapter-xiaohongshu.js",
         "content/panel.js"
       ],
       "run_at": "document_idle",

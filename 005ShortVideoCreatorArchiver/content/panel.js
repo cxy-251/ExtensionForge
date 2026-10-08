@@ -5,12 +5,15 @@
  * 一键入队下载。打开这个作者自己的视频（adapter.contextOwner()）面板照常显示；去了别的
  * 页面面板收起但采集结果留着，回到同一个作者的主页原样恢复；进了另一个作者的主页才清空。
  *
+ *  - 小红书这类列表里没有地址的平台（adapter.detail）：列表项先进 S.pending，自动采集时
+ *    后台逐篇调 adapter.detail.fetchNote 取详情（每篇间隔 0.8~1.5 秒，被拦截就停），下滑等取
+ *    详情跟上了再滑下一屏——页面滚动和采集进度同步，不会列表早滑到底、详情还拖一大串；
  *  - 面板挂在 Shadow DOM 里，样式用 constructable stylesheet 注入——宿主页面的 reset
  *    样式进不来，也不受页面 CSP 的 style-src 限制；
  *  - 面板上只显示一行队列数字；暂停/继续出队、清空排队都在工具栏气泡（popup）里，不重复放。
  *    数字靠轮询 getState（页面可见时每 2 秒一次）：background 的
  *    chrome.runtime.sendMessage 只发给扩展自己的页面，到不了 content 脚本。
- *    paused 另外监听 storage.onChanged，在气泡里点了暂停这里立刻跟上。
+ *    pausedBy 另外监听 storage.onChanged，在气泡里点了暂停这里立刻跟上。
  */
 (() => {
   "use strict";
@@ -30,6 +33,7 @@
     scrollMinGap: 2800,
     scrollMaxGap: 5500,
     idleRoundsStop: 4,        // 连续这么多轮没有新作品 = 到底了；不设总轮数上限
+    detailBacklog: 6,         // 取详情的平台：加载出来还没取到地址的超过这么多篇，先不往下滑
     queuePollMs: 2000
   });
 
@@ -37,7 +41,9 @@
     owner: A.profileOwner(),   // 正在采集的作者（主页主人）；"" = 还没进过创作者主页
     visible: false,            // 当前页面属于 owner（主页或其视频页）才显示面板、才收回包
     status: "",                // 面板收起再出现时要能还原
-    works: new Map(),          // videoId -> work
+    works: new Map(),          // videoId -> work（有地址，能下载）
+    pending: new Map(),        // videoId -> 列表项（还没地址，等点开取详情；只有 adapter.detail 的平台用）
+    tries: new Map(),          // videoId -> 已经取过几次详情（取不到的别无限重试）
     downloaded: new Set(),     // 已下载过的 videoId（来自 dl:<platform>:<id>）
     collapsed: false,
     autoRunning: false,
@@ -69,8 +75,11 @@
   // 留着——旁路采集拿不回已经加载过的列表（滑到底后再滑不会重新请求），丢了只能刷新页面重来。
   // 混进别人作品的风险由 ingest 里的作者 id 比对兜着，不靠清空。
 
+  // 小红书点开笔记后网址是 /explore/<笔记id>，没有作者；已知的笔记就算 owner 的
+  const ownerOfNote = (id) => (S.works.has(id) || S.pending.has(id) ? S.owner : "");
+
   function pageOwner() {
-    return A.contextOwner ? A.contextOwner() : A.profileOwner();
+    return A.contextOwner ? A.contextOwner(ownerOfNote) : A.profileOwner();
   }
 
   function syncPage() {
@@ -78,6 +87,8 @@
     if (profile && profile !== S.owner) {
       S.owner = profile;
       S.works.clear();
+      S.pending.clear();
+      S.tries.clear();
       S.downloaded.clear();
       S.autoRunning = false;
       S.visible = true;
@@ -104,12 +115,24 @@
 
     let parsed = [];
     try { parsed = A.parsePayload(entry); } catch (err) { LOG("解析异常", err); }
+    const { added, listed, blocked } = absorb(parsed, kind);
+    LOG(kind === "api" ? entry.url : `[state:${entry.key}]`, "→ 解析", parsed.length, "新增", added,
+      listed ? `待取详情+${listed}` : "", blocked ? `丢弃${blocked}(不是本主页作者)` : "");
+    if (added || listed) { renderPanel(); refreshDownloaded(); }
+  }
 
-    let added = 0, blocked = 0;
+  // 把解析出的 Work 收进 works / pending。kind 为 "state" 的（首屏状态）拿不到作者 id 就不收
+  function absorb(parsed, kind) {
+    let added = 0, blocked = 0, listed = 0;
     for (const w of parsed) {
-      if (!w.videoId || (!w.videoUrl && !w.imageUrls.length)) continue;
+      if (!w.videoId || (!w.needsDetail && !w.videoUrl && !w.imageUrls.length)) continue;
       const verifiable = w.ownerId && S.owner !== "self";
       if ((verifiable && w.ownerId !== S.owner) || (kind === "state" && !w.ownerId)) { blocked++; continue; }
+      if (w.needsDetail) {
+        if (!S.works.has(w.videoId) && !S.pending.has(w.videoId)) { S.pending.set(w.videoId, w); listed++; }
+        continue;
+      }
+      S.pending.delete(w.videoId);
       const prev = S.works.get(w.videoId);
       if (!prev) { S.works.set(w.videoId, w); added++; continue; }
       if (!prev.videoUrl && w.videoUrl) { prev.videoUrl = w.videoUrl; prev.videoUrls = w.videoUrls; }
@@ -120,10 +143,7 @@
       // 不然图集会被当视频下成一段音频
       prev.kind = A.kindOf(prev);
     }
-    LOG(kind === "api" ? entry.url : `[state:${entry.key}]`, "→ 解析", parsed.length, "新增", added,
-      blocked ? `丢弃${blocked}(不是本主页作者)` : "");
-
-    if (added) { renderPanel(); refreshDownloaded(); }
+    return { added, listed, blocked };
   }
 
   // ---------- 已下载去重 ----------
@@ -152,8 +172,8 @@
       const id = k.slice(dlPrefix.length);
       if (S.works.has(id) && !S.downloaded.has(id)) { S.downloaded.add(id); changed = true; }
     }
-    if (changes.paused && S.queue) {
-      S.queue.paused = Boolean(changes.paused.newValue);
+    if (changes.pausedBy && S.queue) {
+      S.queue.pausedBy = changes.pausedBy.newValue || {};
       renderQueue();
     }
     if (changed) renderPanel();
@@ -360,21 +380,26 @@
     const headQ = $(".head-q");
     if (!q) { line.textContent = "下载队列：—"; headQ.textContent = ""; return; }
 
-    const s = q.stats || {};
-    const mine = (q.byPlatform && q.byPlatform[A.platform]) || { queued: 0 };
+    // 每个平台各一条下载通道，面板只显示本平台的数；别的平台还有在排/在下的，补一句
+    const by = q.byPlatform || {};
+    const mine = by[A.platform] || { queued: 0, active: 0, done: 0, failed: 0 };
     line.textContent = "下载队列：";
-    [["排队", q.queued], ["下载中", q.active], ["完成", s.done], ["失败", s.failed]].forEach(([k, v], i) => {
+    [["排队", mine.queued], ["下载中", mine.active], ["完成", mine.done], ["失败", mine.failed]].forEach(([k, v], i) => {
       const b = document.createElement("b");
       b.textContent = String(v || 0);
       line.append(i ? " · " + k + " " : k + " ", b);
     });
-    // 队列是三个平台共用的，别的平台也有排队时标一下本平台占多少
-    if (q.queued !== mine.queued) line.append(`（${A.label} ${mine.queued}）`);
-    if (q.paused) line.append(" ｜ ⏸ 已暂停出队（点扩展图标继续）");
+    const others = Object.entries(by).filter(([p, v]) => p !== A.platform && (v.queued || v.active));
+    if (others.length) {
+      const oq = others.reduce((n, [, v]) => n + v.queued + v.active, 0);
+      line.append(`（其它平台还有 ${oq} 个在排队/下载，各走各的，不影响这里）`);
+    }
+    const paused = !!(q.pausedBy && q.pausedBy[A.platform]);
+    if (paused) line.append(` ｜ ⏸ ${A.label}已暂停出队（点扩展图标继续）`);
 
     // 折叠时标题栏上留一个最小的数字，不用展开也能看到还剩多少
-    headQ.textContent = S.collapsed && (q.queued || q.active)
-      ? `${q.paused ? "⏸ " : ""}排队 ${q.queued} · 下载中 ${q.active}`
+    headQ.textContent = S.collapsed && (mine.queued || mine.active)
+      ? `${paused ? "⏸ " : ""}排队 ${mine.queued} · 下载中 ${mine.active}`
       : "";
   }
 
@@ -406,7 +431,7 @@
       videoId: w.videoId, kind: w.kind, author: sanitize(w.author),
       title: sanitize(w.title || w.videoId), dateStr: dateStr(w.timestampMs),
       videoUrl: w.videoUrl, videoUrls: w.videoUrls || (w.videoUrl ? [w.videoUrl] : []),
-      imageUrls: w.imageUrls
+      imageUrls: w.imageUrls, pageUrl: w.pageUrl || ""
     }));
     const r = await send({ cmd: "enqueue", works });
     if (!r) return;
@@ -415,7 +440,8 @@
     setStatus(`已把 ${items.length} 条作品（${r.added} 个文件）加入队列` +
       (skipped ? `，跳过 ${skipped} 条已存` : "") +
       (r.skipped ? `，${r.skipped} 个文件本来就在队列里` : "") +
-      (S.queue && S.queue.paused ? " —— 队列现在是暂停状态，点扩展图标里的「▶ 继续出队」才会开始下" : ""));
+      (S.queue && S.queue.pausedBy && S.queue.pausedBy[A.platform]
+        ? ` —— ${A.label}现在是暂停出队状态，点扩展图标里${A.label}那一行的「▶」才会开始下` : ""));
   }
 
   // ---------- 自动下滑 ----------
@@ -479,43 +505,121 @@
   // 只在作品列表页滑：打开了视频（播放层里往下滑会切到下一个视频）或去了别的页面就暂停
   const onListPage = (owner) => A.profileOwner() === owner;
 
+  async function waitFor(test, ms) {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { if (test()) return true; await sleep(250); }
+    return test();
+  }
+
+  function requestState() {
+    window.postMessage({ source: TAG, kind: "dump-state" }, location.origin);
+  }
+
+  // 后台取详情：逐篇调 adapter.detail.fetchNote，每篇间隔 1~2 秒。和下滑采集同时跑，
+  // 列表里新出来的待取详情会被它陆续取掉。stopWhenEmpty 为真时取完就收工，否则等下滑那边
+  // 喂新的进来。被拦截（风控、跳登录页）立即停，返回原因；正常结束返回 ""。
+  const detailRun = { active: false, blocked: "", missing: 0 };
+
+  async function runDetails(owner, until) {
+    detailRun.active = true;
+    detailRun.blocked = "";
+    try {
+      while (S.autoRunning && S.owner === owner) {
+        // 先把没试过的取一遍，失败过一次的放到最后再试
+        const pend = [...S.pending.values()];
+        const item = pend.find((w) => !S.tries.get(w.videoId)) || pend.find((w) => S.tries.get(w.videoId) < 2);
+        if (!item) {
+          if (until()) return "";
+          await sleep(500);
+          continue;
+        }
+        S.tries.set(item.videoId, (S.tries.get(item.videoId) || 0) + 1);
+        const r = await A.detail.fetchNote(item);
+        if (S.owner !== owner) return "";
+        if (r.blocked) { detailRun.blocked = r.blocked; return r.blocked; }
+        if (r.work) {
+          absorb([r.work], "detail");
+          refreshDownloaded();
+        } else if (S.tries.get(item.videoId) >= 2) {
+          detailRun.missing++;
+        }
+        setStatus(`自动采集中… 已采集 ${S.works.size} 条，列表已加载 ${S.works.size + S.pending.size} 条` +
+          (detailRun.missing ? `（${detailRun.missing} 条取不到，可能已删除）` : ""));
+        renderPanel();
+        await sleep(rand(800, 1500));
+      }
+      return "";
+    } finally {
+      detailRun.active = false;
+    }
+  }
+
   async function startAuto() {
     if (S.autoRunning || !S.owner) return;
     if (!onListPage(S.owner)) { setStatus("先回到作者的作品列表页，再点「自动采集」"); return; }
     S.autoRunning = true;
+    S.tries.clear();               // 上一轮没取到详情的，这一轮再给两次机会
     const owner = S.owner;
     renderPanel();
 
-    let idle = 0, round = 0;
+    let idle = 0, round = 0, listDone = false;
     const start = S.works.size;
+    detailRun.missing = 0;
+    if (A.detail) requestState();
+    // 取详情和下滑同时跑；下滑到底以后，取详情把剩下的取完才算结束
+    const details = A.detail ? runDetails(owner, () => listDone) : Promise.resolve("");
 
     while (S.autoRunning && onListPage(owner)) {
       if (captchaVisible()) {
         stopAuto("检测到安全验证，已暂停 —— 在页面完成验证后再点「自动采集」");
         return;
       }
-      const before = S.works.size;
+      if (detailRun.blocked) break;
+      // 取详情的平台：等取详情跟上了再滑，页面滚动和采集进度保持一致
+      if (A.detail) {
+        const backlog = () => [...S.pending.keys()].filter((id) => !S.tries.get(id)).length;
+        while (S.autoRunning && !detailRun.blocked && backlog() > CFG.detailBacklog) await sleep(500);
+        if (!S.autoRunning || detailRun.blocked) break;
+      }
+      const before = S.works.size + S.pending.size;
       scrollFeedDown();
       await sleep(rand(CFG.scrollMinGap, CFG.scrollMaxGap));
       if (!onListPage(owner)) break;
       if (Math.random() < 0.3) { scrollFeedBy(-Math.round(rand(200, 500))); await sleep(rand(300, 700)); }
+      if (A.detail) { requestState(); await sleep(400); }
 
       round++;
       // 标签页在后台时 Chrome 会限速页面的懒加载，采不到新内容不代表到底了，不计空转
-      if (S.works.size === before) { if (!document.hidden) idle++; } else { idle = 0; }
-      setStatus(`自动采集中… 第 ${round} 轮，累计 ${S.works.size} 条` +
-        (document.hidden ? "（标签页在后台，可能被浏览器限速，建议切回前台）" : ""));
+      if (S.works.size + S.pending.size === before) { if (!document.hidden) idle++; } else { idle = 0; }
+      if (!A.detail) {
+        setStatus(`自动采集中… 第 ${round} 轮，累计 ${S.works.size} 条` +
+          (document.hidden ? "（标签页在后台，可能被浏览器限速，建议切回前台）" : ""));
+      }
       renderPanel();
       if (idle >= CFG.idleRoundsStop) break;
     }
+    // 列表滑到底了；取详情的把剩下的取完（它自己会在被拦截、用户停止、换作者时退出）
+    listDone = true;
+    const blockedWhy = await details;
     if (S.owner !== owner) return;   // 中途进了别的作者主页，syncPage 已经清场
-    if (!onListPage(owner)) {
-      stopAuto(`自动采集已暂停（打开了视频或离开了作品页），已采集 ${S.works.size} 条，回到作品页再点「自动采集」接着滑`);
+    if (captchaVisible()) {
+      stopAuto(`检测到安全验证，已暂停 —— 已采集 ${S.works.size} 条，在页面完成验证后再点「自动采集」接着来`);
+      return;
+    }
+    if (!S.autoRunning) return;      // 用户点了「停止采集」，stopAuto 已经提示过
+    if (blockedWhy) {
+      stopAuto(`${A.label}拦下了请求（${blockedWhy}），可能触发了风控，已停止。` +
+        `已采集 ${S.works.size} 条；歇一会儿、刷新页面确认能正常浏览后，再点「自动采集」接着来`);
+      return;
+    }
+    if (!onListPage(owner) && !A.detail) {
+      stopAuto(`自动采集已暂停（打开了作品或离开了作品页），已采集 ${S.works.size} 条，回到作品页再点「自动采集」接着来`);
       return;
     }
 
     stopAuto(`自动采集结束：新增 ${S.works.size - start} 条，共 ${S.works.size} 条` +
-      (S.works.size === 0 ? "（0 条：确认已登录，刷新页面再试；F12 Console 里有每次接口回包的记录）" : ""));
+      (S.pending.size ? `；另有 ${S.pending.size} 条取不到内容（可能已删除），再点一次「自动采集」会再试` : "") +
+      (S.works.size === 0 && !S.pending.size ? "（0 条：确认已登录，刷新页面再试；F12 Console 里有每次接口回包的记录）" : ""));
   }
 
   function stopAuto(msg) {

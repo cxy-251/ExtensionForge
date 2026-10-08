@@ -4,7 +4,7 @@
   "short_name": "YT 观看增强",
   "version": "1.0",
   "description": "为 YouTube 增加三项功能：播放器网页全屏、单视频循环、以及频道视频页把当前排序列表一键合成播放列表。",
-  "homepage_url": "https://github.com/cxy-251/PyGitRep001/tree/main/ExtensionForge/001YouTubeWatchEnhancer",
+  "homepage_url": "https://github.com/cxy-251/ExtensionForge/tree/main/001YouTubeWatchEnhancer",
   "minimum_chrome_version": "120",
   "content_scripts": [
     {

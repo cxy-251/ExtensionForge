@@ -32,7 +32,7 @@
       if (Array.isArray(urls)) videoUrls.push(...urls);
     });
     if (!videoUrls.length) videoUrls = collectUrls(deepGet(video, ["play_addr", "url_list"]));
-    // 兜底：uri 拼 1080p 播放直链，dyd 里验证过的公式
+    // 兜底：uri 拼 1080p 播放直链，DyD 里验证过的公式
     if (!videoUrls.length) {
       const uri = deepGet(video, ["play_addr", "uri"]) || deepGet(bitRates, [0, "play_addr", "uri"]);
       if (uri) videoUrls.push(`https://aweme.snssdk.com/aweme/v1/play/?video_id=${uri}&ratio=1080p&line=0`);

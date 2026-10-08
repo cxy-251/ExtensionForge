@@ -9,19 +9,22 @@
 <body>
   <header class="hd">短视频创作者作品归档助手</header>
   <div class="body">
-    <p class="stat" id="q">队列：—</p>
-    <p class="sub" id="per"></p>
-    <div class="row">
-      <button class="btn" id="btnToggle">⏸ 暂停出队</button>
-      <button class="btn ghost" id="btnClear">🗑 清空全部排队</button>
+    <div class="plats" id="plats"></div>
+    <details class="fail" id="failBox" hidden>
+      <summary id="failSum"></summary>
+      <div class="fail-list" id="failList"></div>
+      <div class="row">
+        <button class="sbtn" id="btnRetry">🔁 重试失败</button>
+        <button class="sbtn" id="btnFailClear">清空清单</button>
+      </div>
+      <p class="hint">重试用的是当时的直链：小红书图片不会过期，多半能成；抖音 / TikTok 的直链几小时就失效，
+        重试还失败的话，点作品标题打开、或回作者主页重新「自动采集」再「下载全部」。下载成功的会自动从清单里消失。</p>
+    </details>
+    <div class="tools">
+      <button class="link" id="btnImport">📂 从磁盘导入已下记录</button>
     </div>
-    <div class="row">
-      <button class="btn ghost" id="btnImport">📂 从磁盘导入已下记录</button>
-    </div>
-    <p class="hint">打开快手 / 抖音 / TikTok 的创作者主页（作品页），右下角会出现采集面板，
-      采集、下载、暂停出队都在面板上操作。</p>
-    <p class="hint">下载队列是常驻的（存在 chrome.storage 里，重启浏览器也不会自动清空）。
-      暂停只拦截出队，已经开始下载的会照常下完。</p>
+    <p class="hint">采集和「下载全部」在创作者主页右下角的面板上。每个平台各下各的；「暂停」只停止出队，正在下的照常下完；
+      「清空」清掉这个平台还在排队的。卡住 3 分钟没进度的下载会自动换候选地址重来。队列重启浏览器后会接着下。</p>
   </div>
   <script src="popup.js"></script>
 </body>

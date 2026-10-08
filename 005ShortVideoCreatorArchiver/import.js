@@ -14,9 +14,9 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const LABELS = { kuaishou: "快手", douyin: "抖音", tiktok: "TikTok" };
-// 抖音 / TikTok 的作品 id 是 19 位左右的纯数字；快手是 3x 开头的字母数字串
-const ID_RE = { douyin: /^\d{15,}$/, tiktok: /^\d{15,}$/, kuaishou: /^[0-9a-z]{10,}$/i };
+const LABELS = { kuaishou: "快手", douyin: "抖音", tiktok: "TikTok", xiaohongshu: "小红书" };
+// 抖音 / TikTok 的作品 id 是 19 位左右的纯数字；快手是 3x 开头的字母数字串；小红书是 24 位十六进制
+const ID_RE = { douyin: /^\d{15,}$/, tiktok: /^\d{15,}$/, kuaishou: /^[0-9a-z]{10,}$/i, xiaohongshu: /^[0-9a-f]{24}$/i };
 
 async function allKeys() {
   return chrome.storage.local.getKeys
