@@ -1,5 +1,6 @@
 /*
- * 抖音解析器，移植自 003DouyinCreatorArchiver/content.js（接口参考 dyd/service/dy.js）。
+ * 抖音解析器，移植自 003DouyinCreatorArchiver/content.js（已移除，见 git 历史；
+ * 接口最初参考 DyD 的 service/dy.js）。
  * 只采创作者主页「作品」标签：aweme/post 回包的 aweme_list[]，以及首屏 RENDER_DATA。
  */
 (() => {

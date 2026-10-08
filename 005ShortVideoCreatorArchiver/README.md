@@ -1,7 +1,7 @@
 # 005 短视频创作者作品归档助手（快手 / 抖音 / TikTok）
 
 002/003/004 合并后的版本，只做一件事：**在创作者主页上不停下滑采集作品，然后入队下载**。
-002/003/004 保持不动，可以并存。
+旧插件已移除（见 git 历史）；还装着的话要先停用，它们和 005 会写同一份 `downloaded.txt`、互相覆盖。
 
 ## 支持的页面
 
@@ -14,7 +14,11 @@
 | TikTok | `www.tiktok.com/@<uniqueId>` | `/api/post/item_list` + 首屏 `__UNIVERSAL_DATA_FOR_REHYDRATION__` |
 
 每条作品还会按作者 id 和主页主人比对一次（快手 `author.id`、抖音 `author.sec_uid`、
-TikTok `author.uniqueId`），对不上的丢掉；站内跳到别的页面，采集列表清空。
+TikTok `author.uniqueId`），对不上的丢掉。
+
+站内跳转：在主页里点开作品（TikTok 网址会变成 `/@作者/video/<id>`）面板照常显示；去了别的页面
+面板收起、采集结果保留，回到同一个作者的主页原样恢复；进了另一个作者的主页才清空。
+自动采集只在作品列表页滑，打开作品时会暂停。
 
 ## 用法
 
@@ -34,6 +38,8 @@ TikTok `author.uniqueId`），对不上的丢掉；站内跳到别的页面，�
 每个作者文件夹里有一份 `downloaded.txt`（`kuaishou|douyin|tiktok <id>`，兼容 yt-dlp `--download-archive`）。
 
 ## 与 002/003/004 的区别
+
+（每一条背后的坑见 `../docs/踩坑记录.md`）
 
 - 去重键带平台前缀：`dl:<platform>:<id>`、`arc:<platform>:<author>`；
 - Cookie 动态规则 ID 分段：快手 1xxx、抖音 2xxx、TikTok 3xxx，`requestDomains` 只限本平台域名；
@@ -56,9 +62,12 @@ manifest.json         三个平台的 content script、DNR 规则
 inject.js             MAIN world：只转发主页作品列表接口的回包 + 首屏状态
 content/common.js     共用小工具
 content/adapter-*.js  各平台：判定主页、解析作品
-content/panel.js      面板、自动下滑、入队、队列控制
+content/panel.js      面板、自动下滑、入队、队列数字
 background.js         下载队列、Cookie 规则、去重记录、downloaded.txt
 popup.*               工具栏弹窗：全平台队列一览 + 暂停/继续/清空 + 打开导入页
 import.*              从磁盘导入已下记录
 rules.json            静态 Referer/Origin 规则
+PRIVACY.md            隐私说明
 ```
+
+给 005 加新平台：见 `../docs/逆向与分析方法.md` 第四节。

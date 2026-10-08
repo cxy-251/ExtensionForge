@@ -66,7 +66,7 @@ const inflight = new Map();
 
 // ---------- CDN 直链带上登录态 Cookie ----------
 //
-// 来历见 003/004 的 background.js：一部分直链（尤其挂在 douyin.com / tiktok.com 主域名下的
+// 来历见 docs/踩坑记录.md「二、下载」：一部分直链（尤其挂在 douyin.com / tiktok.com 主域名下的
 // /aweme/v1/play/ 兜底地址）不带真实登录态 Cookie 会被拦，Chrome 把拦截页存成 .html。
 // chrome.downloads 不能自定义请求头，只能用 declarativeNetRequest 的 session 规则塞进去。
 // 主域名那条规则不含 xmlhttprequest，不碰页面自己发的接口请求。

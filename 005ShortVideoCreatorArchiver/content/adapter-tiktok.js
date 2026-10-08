@@ -1,5 +1,5 @@
 /*
- * TikTok 解析器，移植自 004TikTokCreatorArchiver/content.js。
+ * TikTok 解析器，移植自 004TikTokCreatorArchiver/content.js（已移除，见 git 历史）。
  * 只采创作者主页作品：/api/post/item_list 回包的 itemList[]，以及首屏
  * __UNIVERSAL_DATA_FOR_REHYDRATION__ 里内嵌的那一页。
  */

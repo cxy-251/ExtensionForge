@@ -1,6 +1,6 @@
 /*
- * 快手解析器，移植自 002KuaishouCreatorArchiver/content.js（其快手分支最初又移植自
- * dyd/src-deobfuscated/service/ks.annotated.js）。只保留创作者主页作品列表用得到的分支：
+ * 快手解析器，移植自 002KuaishouCreatorArchiver/content.js（已移除，见 git 历史；其快手分支
+ * 最初又移植自 dyd/src-deobfuscated/service/ks.annotated.js）。只保留创作者主页作品列表用得到的分支：
  * visionProfilePhotoList 的 feeds[]、profile/public 的 list[]，字段多名兜底。
  * 单作品详情、图集分享页那些分支不要了——005 只采主页。
  */

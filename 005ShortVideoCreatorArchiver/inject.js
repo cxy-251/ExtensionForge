@@ -19,7 +19,7 @@
     kuaishou: {
       hosts: /(^|\.)kuaishou\.com$/,
       // 网页版主页作品走 graphql（operationName visionProfilePhotoList，在请求体里），
-      // 老接口/移动端是 profile/public、profile/feed —— 参考 dyd/service/ks.annotated.js
+      // 老接口/移动端是 profile/public、profile/feed —— 参考 dyd/src-deobfuscated/service/ks.annotated.js
       isProfileFeed: (url, body) =>
         (/\/graphql/i.test(url) && /visionProfilePhotoList/.test(body)) ||
         /\/profile\/(public|feed)\b/i.test(url),
