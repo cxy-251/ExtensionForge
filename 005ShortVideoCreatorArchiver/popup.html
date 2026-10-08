@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="popup.css">
+  <title>短视频归档助手</title>
+</head>
+<body>
+  <header class="hd">短视频创作者作品归档助手</header>
+  <div class="body">
+    <p class="stat" id="q">队列：—</p>
+    <p class="sub" id="per"></p>
+    <div class="row">
+      <button class="btn" id="btnToggle">⏸ 暂停出队</button>
+      <button class="btn ghost" id="btnClear">🗑 清空全部排队</button>
+    </div>
+    <div class="row">
+      <button class="btn ghost" id="btnImport">📂 从磁盘导入已下记录</button>
+    </div>
+    <p class="hint">打开快手 / 抖音 / TikTok 的创作者主页（作品页），右下角会出现采集面板，
+      采集、下载、暂停出队都在面板上操作。</p>
+    <p class="hint">下载队列是常驻的（存在 chrome.storage 里，重启浏览器也不会自动清空）。
+      暂停只拦截出队，已经开始下载的会照常下完。</p>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

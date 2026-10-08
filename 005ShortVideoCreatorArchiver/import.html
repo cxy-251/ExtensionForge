@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="import.css">
+  <title>导入已下记录</title>
+</head>
+<body>
+<div class="wrap">
+  <header class="hd">导入已下记录</header>
+  <section class="card">
+    <p class="stat" id="have">当前已有记录：—</p>
+    <label class="field">平台
+      <select id="platform">
+        <option value="douyin">抖音</option>
+        <option value="tiktok">TikTok</option>
+        <option value="kuaishou">快手</option>
+      </select>
+    </label>
+    <button class="pick" id="pick">选择一个文件夹导入（下载目录/抖音、媒体库……）</button>
+    <p class="stat" id="result"></p>
+    <p class="hint">会扫描文件夹里所有 <code>&lt;作者&gt;/downloaded.txt</code>，以及视频文件名
+      <code>日期_标题_&lt;id&gt;.mp4</code>、图集文件夹名 <code>日期_标题_&lt;id&gt;</code> 里的 id，
+      导入成去重记录，之后「下载全部」会跳过它们。只在本机读，不上传、不改动磁盘上的任何文件。</p>
+    <p class="hint">有好几个媒体库就一个一个选：每次都是合并进已有记录，重复的 id 不会重复计数。
+      文件夹分几层都可以，作者按文件所在的文件夹认。</p>
+    <p class="hint">要在开始用 005 下载之前导入：005 写 <code>downloaded.txt</code> 是整份覆盖，
+      导入后旧的 id 会被一起写回去，不会丢。</p>
+  </section>
+</div>
+  <script src="import.js"></script>
+</body>
+</html>

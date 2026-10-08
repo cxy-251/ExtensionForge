@@ -1,0 +1,111 @@
+{
+  "manifest_version": 3,
+  "name": "短视频创作者作品归档助手",
+  "short_name": "短视频归档助手",
+  "version": "0.1",
+  "description": "快手 / 抖音 / TikTok 创作者主页作品归档：在创作者主页自动下滑采集作品，一键入队批量下载。",
+  "homepage_url": "https://github.com/cxy-251/PyGitRep001/tree/main/ExtensionForge/005ShortVideoCreatorArchiver",
+  "minimum_chrome_version": "111",
+  "permissions": [
+    "downloads",
+    "storage",
+    "unlimitedStorage",
+    "declarativeNetRequest",
+    "cookies",
+    "alarms"
+  ],
+  "host_permissions": [
+    "*://*.kuaishou.com/*",
+    "*://*.kwaicdn.com/*",
+    "*://*.yximgs.com/*",
+    "*://*.kwimgs.com/*",
+    "*://*.ndcimgs.com/*",
+    "*://*.oskwai.com/*",
+    "*://*.djvod.com/*",
+    "*://*.douyin.com/*",
+    "*://*.iesdouyin.com/*",
+    "*://*.douyinvod.com/*",
+    "*://*.douyinpic.com/*",
+    "*://*.zjcdn.com/*",
+    "*://aweme.snssdk.com/*",
+    "*://*.bytedns.douyincdn.com/*",
+    "*://*.tiktok.com/*",
+    "*://*.tiktokcdn.com/*",
+    "*://*.tiktokcdn-us.com/*",
+    "*://*.tiktokcdn-eu.com/*",
+    "*://*.tiktokv.com/*",
+    "*://*.tiktokv.us/*",
+    "*://*.muscdn.com/*",
+    "*://*.ibyteimg.com/*",
+    "*://*.byteoversea.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "短视频创作者作品归档助手",
+    "default_popup": "popup.html"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "sva_referer",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.kuaishou.com/*",
+        "*://*.douyin.com/*",
+        "*://*.iesdouyin.com/*",
+        "*://*.tiktok.com/*"
+      ],
+      "js": [
+        "inject.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "*://*.kuaishou.com/*"
+      ],
+      "js": [
+        "content/common.js",
+        "content/adapter-kuaishou.js",
+        "content/panel.js"
+      ],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://*.douyin.com/*",
+        "*://*.iesdouyin.com/*"
+      ],
+      "js": [
+        "content/common.js",
+        "content/adapter-douyin.js",
+        "content/panel.js"
+      ],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": [
+        "*://*.tiktok.com/*"
+      ],
+      "js": [
+        "content/common.js",
+        "content/adapter-tiktok.js",
+        "content/panel.js"
+      ],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    }
+  ]
+}
